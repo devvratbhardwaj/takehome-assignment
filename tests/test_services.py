@@ -1,7 +1,7 @@
 import pytest
 
 from app.db import get_connection, init_schema
-from app.services import get_stock, get_suppliers, search_materials
+from app.services import get_stock, get_suppliers, place_order, search_materials
 
 
 @pytest.fixture
@@ -181,3 +181,86 @@ def test_search_results_carry_availability_fields(connection):
     assert result["qty_available"] == 7
     assert result["orderable_qty"] == 7
     assert result["over_allocated"] is False
+
+
+def reserved_qty(connection, sku):
+    return connection.execute(
+        "SELECT qty_reserved FROM materials WHERE sku = :sku", {"sku": sku}
+    ).fetchone()[0]
+
+
+def order_count(connection):
+    return connection.execute("SELECT count(*) FROM orders").fetchone()[0]
+
+
+def test_place_order_confirms_and_reserves_stock(connection):
+    insert_material(connection, sku="RBR-15M-400W", unit_price=27.85, qty_on_hand=120, qty_reserved=0)
+    result = place_order(connection, "RBR-15M-400W", 100)
+    assert result["status"] == "confirmed"
+    assert result["quantity"] == 100
+    assert result["unit_price"] == 27.85
+    assert result["line_total"] == 2785.0
+    assert result["order_id"] is not None
+    assert reserved_qty(connection, "RBR-15M-400W") == 100
+    assert get_stock(connection, "RBR-15M-400W")["qty_available"] == 20
+    assert order_count(connection) == 1
+
+
+def test_place_order_rejects_more_than_available(connection):
+    insert_material(connection, sku="RBR-15M-400W", qty_on_hand=120, qty_reserved=0)
+    result = place_order(connection, "RBR-15M-400W", 500)
+    assert result["status"] == "rejected"
+    assert result["reason"] == "insufficient_stock"
+    assert result["orderable_qty"] == 120
+    assert reserved_qty(connection, "RBR-15M-400W") == 0
+    assert order_count(connection) == 0
+
+
+def test_place_order_rejects_discontinued_even_with_stock(connection):
+    insert_material(connection, sku="STL-PL38-A36", qty_on_hand=6, qty_reserved=2, discontinued=1)
+    result = place_order(connection, "STL-PL38-A36", 3)
+    assert result["status"] == "rejected"
+    assert result["reason"] == "discontinued"
+    assert order_count(connection) == 0
+
+
+def test_place_order_rejects_unknown_sku(connection):
+    result = place_order(connection, "RBR-25M-EPOXY", 10)
+    assert result["status"] == "rejected"
+    assert result["reason"] == "unknown_sku"
+
+
+@pytest.mark.parametrize("quantity", [0, -5])
+def test_place_order_rejects_invalid_quantity(connection, quantity):
+    insert_material(connection, sku="RBR-15M-400W")
+    result = place_order(connection, "RBR-15M-400W", quantity)
+    assert result["status"] == "rejected"
+    assert result["reason"] == "invalid_quantity"
+
+
+def test_place_order_rejects_fully_reserved_sku(connection):
+    insert_material(connection, sku="RBR-20M-EPOXY", qty_on_hand=18, qty_reserved=18)
+    result = place_order(connection, "RBR-20M-EPOXY", 1)
+    assert result["reason"] == "insufficient_stock"
+    assert result["orderable_qty"] == 0
+    assert result["over_allocated"] is False
+
+
+def test_place_order_rejects_over_allocated_sku(connection):
+    insert_material(connection, sku="STL-W12X40-A992", qty_on_hand=4, qty_reserved=6)
+    result = place_order(connection, "STL-W12X40-A992", 1)
+    assert result["reason"] == "insufficient_stock"
+    assert result["orderable_qty"] == 0
+    assert result["qty_available"] == -2
+    assert result["over_allocated"] is True
+
+
+def test_place_order_ignores_min_order_qty(connection):
+    insert_material(connection, sku="RBR-15M-400W", qty_on_hand=120, min_order_qty=25)
+    assert place_order(connection, "RBR-15M-400W", 1)["status"] == "confirmed"
+
+
+def test_place_order_allows_exactly_available_quantity(connection):
+    insert_material(connection, sku="RBR-15M-400W", qty_on_hand=120, qty_reserved=0)
+    assert place_order(connection, "RBR-15M-400W", 120)["status"] == "confirmed"
+    assert get_stock(connection, "RBR-15M-400W")["qty_available"] == 0
