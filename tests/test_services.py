@@ -1,7 +1,7 @@
 import pytest
 
 from app.db import get_connection, init_schema
-from app.services import get_suppliers, search_materials
+from app.services import get_stock, get_suppliers, search_materials
 
 
 @pytest.fixture
@@ -121,6 +121,58 @@ def test_search_matches_material_with_null_spec_grade(connection):
     insert_material(connection, sku="MSC-POLY-6MIL", description="Poly sheeting 6 mil", spec_grade=None)
     results = search_materials(connection, "poly")
     assert [result["sku"] for result in results] == ["MSC-POLY-6MIL"]
+
+
+def test_get_stock_returns_full_payload_for_healthy_sku(connection):
+    insert_material(
+        connection,
+        sku="RBR-15M-400W",
+        description="15M deformed rebar, 6 m length",
+        unit_price=27.85,
+        qty_on_hand=120,
+        qty_reserved=0,
+        reorder_point=25,
+    )
+    stock = get_stock(connection, "RBR-15M-400W")
+    assert stock["qty_available"] == 120
+    assert stock["orderable_qty"] == 120
+    assert stock["over_allocated"] is False
+    assert stock["needs_reorder"] is False
+    assert stock["unit_price"] == 27.85
+    assert stock["unit_of_measure"] == "each"
+    assert stock["warehouse"] == "W1"
+
+
+def test_get_stock_over_allocated_sku(connection):
+    insert_material(connection, sku="STL-W12X40-A992", qty_on_hand=4, qty_reserved=6)
+    stock = get_stock(connection, "STL-W12X40-A992")
+    assert stock["qty_available"] == -2
+    assert stock["orderable_qty"] == 0
+    assert stock["over_allocated"] is True
+
+
+def test_get_stock_fully_reserved_sku_is_not_over_allocated(connection):
+    insert_material(connection, sku="RBR-20M-EPOXY", qty_on_hand=18, qty_reserved=18)
+    stock = get_stock(connection, "RBR-20M-EPOXY")
+    assert stock["qty_available"] == 0
+    assert stock["orderable_qty"] == 0
+    assert stock["over_allocated"] is False
+
+
+def test_get_stock_unknown_sku_returns_none(connection):
+    assert get_stock(connection, "RBR-25M-EPOXY") is None
+
+
+def test_get_stock_flags_needs_reorder(connection):
+    insert_material(connection, sku="RBR-20M-EPOXY", qty_on_hand=18, qty_reserved=18, reorder_point=30)
+    assert get_stock(connection, "RBR-20M-EPOXY")["needs_reorder"] is True
+
+
+def test_get_stock_still_reports_discontinued_sku(connection):
+    insert_material(connection, sku="STL-PL38-A36", qty_on_hand=6, qty_reserved=2, discontinued=1)
+    stock = get_stock(connection, "STL-PL38-A36")
+    assert stock["discontinued"]
+    assert stock["qty_available"] == 4
 
 
 def test_search_results_carry_availability_fields(connection):

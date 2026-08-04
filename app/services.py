@@ -33,6 +33,17 @@ def search_materials(
     return [_with_presentation_fields(row) for row in connection.execute(sql, params)]
 
 
+def get_stock(connection: sqlite3.Connection, sku: str) -> dict | None:
+    row = connection.execute(
+        "SELECT * FROM materials_with_availability WHERE sku = :sku", {"sku": sku}
+    ).fetchone()
+    if row is None:
+        return None
+    stock = _with_presentation_fields(row)
+    stock["needs_reorder"] = stock["qty_available"] <= stock["reorder_point"]
+    return stock
+
+
 def get_suppliers(
     connection: sqlite3.Connection,
     supplier_id: str | None = None,
