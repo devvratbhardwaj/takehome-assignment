@@ -12,6 +12,9 @@ wheels/
 ## env variables
 .env
 
+## rebuildable local database
+*.db
+
 ## Project Files
 raw_data/
 task_description/
