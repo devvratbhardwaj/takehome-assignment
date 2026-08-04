@@ -45,3 +45,34 @@ def test_unknown_supplier_id_returns_empty_list(client):
     response = client.get("/api/suppliers", params={"supplier_id": "SUP-999"})
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_search_passes_availability_fields_through(client):
+    response = client.get("/api/materials/search", params={"query": "W12x40"})
+    assert response.status_code == 200
+    materials = response.json()
+    assert [material["sku"] for material in materials] == ["STL-W12X40-A992"]
+    assert materials[0]["qty_available"] == -2
+    assert materials[0]["orderable_qty"] == 0
+    assert materials[0]["over_allocated"] is True
+
+
+def test_search_with_category_filter(client):
+    response = client.get(
+        "/api/materials/search", params={"query": "15M", "category": "rebar"}
+    )
+    assert response.status_code == 200
+    materials = response.json()
+    assert all(material["category"] == "rebar" for material in materials)
+    assert "RBR-15M-400W" in [material["sku"] for material in materials]
+
+
+def test_search_no_match_returns_empty_list(client):
+    response = client.get("/api/materials/search", params={"query": "unobtainium"})
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_search_without_query_param_is_rejected(client):
+    response = client.get("/api/materials/search")
+    assert response.status_code == 422
