@@ -1,3 +1,6 @@
+import sqlite3
+from pathlib import Path
+
 # Drop-and-recreate on purpose: the JSON file is the source of truth for data, this DB is a rebuildable copy.
 SCHEMA = """
 DROP VIEW IF EXISTS materials_with_availability;
@@ -52,3 +55,14 @@ SELECT
     materials.qty_on_hand - materials.qty_reserved AS qty_available
 FROM materials;
 """
+
+
+def get_connection(database_path: str | Path = "inventory.db") -> sqlite3.Connection:
+    connection = sqlite3.connect(database_path)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
+    return connection
+
+
+def init_schema(connection: sqlite3.Connection) -> None:
+    connection.executescript(SCHEMA)
