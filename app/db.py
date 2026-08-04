@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from pathlib import Path
 
@@ -57,7 +58,9 @@ FROM materials;
 """
 
 
-def get_connection(database_path: str | Path = "inventory.db") -> sqlite3.Connection:
+def get_connection(database_path: str | Path | None = None) -> sqlite3.Connection:
+    if database_path is None:
+        database_path = os.environ.get("INVENTORY_DB", "inventory.db")
     connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
