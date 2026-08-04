@@ -1,6 +1,38 @@
 import sqlite3
 
 
+def _with_presentation_fields(row: sqlite3.Row) -> dict:
+    material = dict(row)
+    material["orderable_qty"] = max(0, material["qty_available"])
+    material["over_allocated"] = material["qty_available"] < 0
+    return material
+
+
+def search_materials(
+    connection: sqlite3.Connection,
+    query: str,
+    category: str | None = None,
+) -> list[dict]:
+    # spec_grade is nullable; without COALESCE the whole haystack would be NULL.
+    haystack = "lower(sku || ' ' || description || ' ' || coalesce(spec_grade, '') || ' ' || category)"
+    clauses = []
+    params: dict = {}
+    for index, token in enumerate(query.lower().split()):
+        clauses.append(f"{haystack} LIKE :token{index}")
+        params[f"token{index}"] = f"%{token}%"
+    if not clauses:
+        return []
+    if category is not None:
+        clauses.append("category = :category")
+        params["category"] = category
+    sql = (
+        "SELECT * FROM materials_with_availability WHERE "
+        + " AND ".join(clauses)
+        + " ORDER BY sku"
+    )
+    return [_with_presentation_fields(row) for row in connection.execute(sql, params)]
+
+
 def get_suppliers(
     connection: sqlite3.Connection,
     supplier_id: str | None = None,

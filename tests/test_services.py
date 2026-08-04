@@ -1,7 +1,7 @@
 import pytest
 
 from app.db import get_connection, init_schema
-from app.services import get_suppliers
+from app.services import get_suppliers, search_materials
 
 
 @pytest.fixture
@@ -76,3 +76,56 @@ def test_filter_by_category_returns_distinct_primary_suppliers(connection):
 
 def test_category_with_no_materials_returns_empty_list(connection):
     assert get_suppliers(connection, category="lumber") == []
+
+
+def test_search_matches_description_case_insensitively(connection):
+    insert_material(connection, sku="RBR-15M-400W", description="15M deformed rebar, 6 m length")
+    insert_material(connection, sku="STL-W12X40-A992", description="W12x40 wide flange beam", category="structural_steel")
+    results = search_materials(connection, "Rebar")
+    assert [result["sku"] for result in results] == ["RBR-15M-400W"]
+
+
+def test_search_matches_sku_and_spec_grade_tokens(connection):
+    insert_material(
+        connection,
+        sku="STL-W12X40-A992",
+        description="W12x40 wide flange beam",
+        category="structural_steel",
+        spec_grade="ASTM A992",
+    )
+    assert [r["sku"] for r in search_materials(connection, "w12x40")] == ["STL-W12X40-A992"]
+    assert [r["sku"] for r in search_materials(connection, "a992")] == ["STL-W12X40-A992"]
+
+
+def test_search_requires_every_token_to_match(connection):
+    insert_material(connection, sku="RBR-15M-400W", description="15M deformed rebar, 6 m length")
+    insert_material(connection, sku="RBR-20M-400W", description="20M deformed rebar, 6 m length")
+    results = search_materials(connection, "15m rebar")
+    assert [result["sku"] for result in results] == ["RBR-15M-400W"]
+
+
+def test_search_returns_empty_list_when_nothing_matches(connection):
+    insert_material(connection, sku="RBR-15M-EPOXY", description="15M epoxy coated rebar, 6 m length")
+    insert_material(connection, sku="RBR-20M-EPOXY", description="20M epoxy coated rebar, 6 m length")
+    assert search_materials(connection, "25m epoxy rebar") == []
+
+
+def test_search_category_filter_narrows_results(connection):
+    insert_material(connection, sku="STL-PL38-A36", description="Steel plate 3/8 in", category="structural_steel")
+    insert_material(connection, sku="MSC-BAND-STL", description="Steel banding roll", category="misc")
+    results = search_materials(connection, "steel", category="structural_steel")
+    assert [result["sku"] for result in results] == ["STL-PL38-A36"]
+
+
+def test_search_matches_material_with_null_spec_grade(connection):
+    insert_material(connection, sku="MSC-POLY-6MIL", description="Poly sheeting 6 mil", spec_grade=None)
+    results = search_materials(connection, "poly")
+    assert [result["sku"] for result in results] == ["MSC-POLY-6MIL"]
+
+
+def test_search_results_carry_availability_fields(connection):
+    insert_material(connection, sku="RBR-15M-400W", description="15M deformed rebar", qty_on_hand=10, qty_reserved=3)
+    result = search_materials(connection, "rebar")[0]
+    assert result["qty_available"] == 7
+    assert result["orderable_qty"] == 7
+    assert result["over_allocated"] is False
