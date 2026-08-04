@@ -76,3 +76,22 @@ def test_search_no_match_returns_empty_list(client):
 def test_search_without_query_param_is_rejected(client):
     response = client.get("/api/materials/search")
     assert response.status_code == 422
+
+
+def test_stock_passes_service_payload_through(client):
+    response = client.get("/api/materials/STL-W12X40-A992")
+    assert response.status_code == 200
+    stock = response.json()
+    assert stock["sku"] == "STL-W12X40-A992"
+    assert stock["qty_on_hand"] == 4
+    assert stock["qty_reserved"] == 6
+    assert stock["qty_available"] == -2
+    assert stock["orderable_qty"] == 0
+    assert stock["over_allocated"] is True
+    assert stock["needs_reorder"] is True
+
+
+def test_stock_unknown_sku_returns_404(client):
+    response = client.get("/api/materials/NOPE-123")
+    assert response.status_code == 404
+    assert "NOPE-123" in response.json()["detail"]
