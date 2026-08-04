@@ -162,6 +162,16 @@ def test_order_unknown_sku_returns_404(client):
     }
 
 
+def test_reset_restores_feed_state(client):
+    client.post("/api/orders", json={"sku": "RBR-15M-400W", "quantity": 10})
+    response = client.post("/api/admin/reset")
+    assert response.status_code == 200
+    assert response.json() == {"suppliers": 9, "materials": 77}
+    stock = client.get("/api/materials/RBR-15M-400W").json()
+    assert stock["qty_reserved"] == 0
+    assert stock["qty_available"] == 120
+
+
 def test_order_invalid_quantity_returns_422(client):
     response = client.post("/api/orders", json={"sku": "RBR-15M-400W", "quantity": 0})
     assert response.status_code == 422

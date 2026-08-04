@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.db import get_connection
+from app.ingest import ingest
 from app.services import get_stock, get_suppliers, place_order, search_materials
 
 router = APIRouter(prefix="/api")
@@ -69,3 +70,9 @@ def create_order(
     if result["status"] == "rejected":
         return JSONResponse(result, status_code=REJECTION_STATUS[result["reason"]])
     return result
+
+
+## Unauthenticated by design: demo convenience for the take-home deployment.
+@router.post("/admin/reset")
+def admin_reset(connection: sqlite3.Connection = Depends(db_connection)) -> dict:
+    return ingest(connection)
