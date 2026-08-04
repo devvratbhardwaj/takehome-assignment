@@ -1,5 +1,6 @@
 # Drop-and-recreate on purpose: the JSON file is the source of truth for data, this DB is a rebuildable copy.
 SCHEMA = """
+DROP VIEW IF EXISTS materials_with_availability;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS materials;
 DROP TABLE IF EXISTS suppliers;
@@ -43,4 +44,11 @@ CREATE TABLE orders (
     line_total REAL NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- qty_available is computed fresh on every read, never stored.
+CREATE VIEW materials_with_availability AS
+SELECT
+    materials.*,
+    materials.qty_on_hand - materials.qty_reserved AS qty_available
+FROM materials;
 """
