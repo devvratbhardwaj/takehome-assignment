@@ -8,7 +8,7 @@
   * { box-sizing: border-box; margin: 0; }
   body {
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    background: #f4f5f7;
+    background: #efece6;
     color: #1a202c;
     height: 100dvh;
     display: flex;
@@ -23,11 +23,25 @@
     box-shadow: 0 0 24px rgba(0, 0, 0, 0.06);
   }
   header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     padding: 16px 20px;
-    border-bottom: 1px solid #e2e8f0;
+    background: #2b3442;
   }
-  header h1 { font-size: 17px; font-weight: 600; }
-  header p { font-size: 13px; color: #64748b; margin-top: 2px; }
+  header h1 { font-size: 17px; font-weight: 600; color: #fff; }
+  header p { font-size: 13px; color: #a8b3c2; margin-top: 2px; }
+  #reset {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    color: #cbd5e1;
+    background: none;
+    border: 1px solid #55627a;
+    flex-shrink: 0;
+  }
   #messages {
     flex: 1;
     overflow-y: auto;
@@ -47,14 +61,20 @@
   }
   .user {
     align-self: flex-end;
-    background: #1e5aa8;
+    background: #2b3442;
     color: #fff;
     border-bottom-right-radius: 4px;
   }
   .assistant {
     align-self: flex-start;
-    background: #eef1f5;
+    background: #f0ede7;
     border-bottom-left-radius: 4px;
+  }
+  .notice {
+    align-self: center;
+    background: #e7e3d8;
+    color: #57534e;
+    font-size: 13px;
   }
   .error {
     align-self: center;
@@ -79,14 +99,14 @@
     border-radius: 10px;
     outline: none;
   }
-  input:focus { border-color: #1e5aa8; }
+  input:focus { border-color: #2b3442; }
   button {
     padding: 10px 18px;
     font: inherit;
     font-size: 14px;
     font-weight: 600;
     color: #fff;
-    background: #1e5aa8;
+    background: #2b3442;
     border: none;
     border-radius: 10px;
     cursor: pointer;
@@ -97,8 +117,17 @@
 <body>
 <main>
   <header>
-    <h1>Inventory Assistant</h1>
-    <p>Check stock, look up suppliers, place orders.</p>
+    <div>
+      <h1>Inventory Assistant</h1>
+      <p>Check stock, look up suppliers, place orders.</p>
+    </div>
+    <button id="reset" type="button" title="Reset data" aria-label="Reset data">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"/>
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+      </svg>
+    </button>
   </header>
   <div id="messages"></div>
   <form id="chat-form">
@@ -112,6 +141,7 @@
   const form = document.getElementById("chat-form");
   const input = document.getElementById("chat-input");
   const send = document.getElementById("send");
+  const reset = document.getElementById("reset");
 
   function addMessage(className, text) {
     const el = document.createElement("div");
@@ -121,6 +151,23 @@
     messages.scrollTop = messages.scrollHeight;
     return el;
   }
+
+  reset.addEventListener("click", async () => {
+    if (!confirm("Reset inventory to the original data?")) return;
+    reset.disabled = true;
+    try {
+      const response = await fetch("/api/admin/reset", { method: "POST" });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const counts = await response.json();
+      history.length = 0;
+      messages.replaceChildren();
+      addMessage("notice", `Inventory reset — ${counts.materials} materials, ${counts.suppliers} suppliers reloaded`);
+    } catch {
+      addMessage("error", "Reset failed — please try again.");
+    } finally {
+      reset.disabled = false;
+    }
+  });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
