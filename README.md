@@ -17,10 +17,14 @@ read-only ERP feed.
 Requires Python 3.14+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-# 1. Install dependencies
+# 1. Clone the repository
+git clone https://github.com/devvratbhardwaj/takehome-assignment.git
+cd takehome-assignment
+
+# 2. Install dependencies
 uv sync
 
-# 2. Configure environment
+# 3. Configure environment
 cp .env.example .env        # or create .env by hand
 # required:
 #   OPENAI_API_KEY=sk-...
@@ -28,7 +32,7 @@ cp .env.example .env        # or create .env by hand
 #   OPENAI_MODEL=gpt-4o-mini      (default)
 #   LANGSMITH_*                   (tracing, off by default)
 
-# 3. Start the server (ingestion runs automatically at startup)
+# 4. Start the server (ingestion runs automatically at startup)
 uv run fastapi dev app/main.py
 ```
 
@@ -45,6 +49,10 @@ directly through the API:
 ```bash
 curl -X POST localhost:8000/api/admin/reset
 ```
+
+Refreshing the page after a reset is advisable. The button clears the conversation in the
+tab it is pressed in, but conversation history is held client-side, so any other open tab
+would still be sending figures from before the reset back to the assistant.
 
 Ingestion can also be run standalone; it is idempotent, dropping and rebuilding the tables
 from the JSON every time:
@@ -165,17 +173,31 @@ or restart rebuilds the database from the JSON.
 
 ### Database schema and rationale
 
-| Table | Contents | Rationale |
-|---|---|---|
-| `suppliers` | as in the feed, `supplier_id` PK | direct relational mapping |
-| `materials` | as in the feed, `sku` PK, FK → suppliers, CHECK constraints (non-negative quantities, boolean `discontinued`) | Pydantic validates the feed before any insert; CHECKs guard the DB itself |
-| `orders` | `order_id`, `sku`, `quantity`, `unit_price` as at the time of order, `line_total`, `created_at` | audit trail; the price is captured at order time so that later price changes cannot rewrite history |
-| `meta` | key/value from the feed's `meta` block | lets the assistant cite the as-of date and currency instead of guessing |
+Four tables and one view, defined in [app/db.py](app/db.py). The three catalogue tables
+mirror the feed; `orders` is the only table the application writes to.
 
-`qty_available` is deliberately not a column. It exists only as the
-`materials_with_availability` SQL view (`qty_on_hand - qty_reserved`), which makes business
-rule 1 ("availability is derived, not stored") structurally impossible to violate: there is
-no stored value that can go stale.
+| Object | Key | References | Contents and constraints |
+|---|---|---|---|
+| `meta` | `key` | | as-of date, currency and definitions from the feed's meta block |
+| `suppliers` | `supplier_id` | | lead times and payment terms, mapped directly from the feed |
+| `materials` | `sku` | `primary_supplier_id` → `suppliers` | the catalogue; CHECKs keep price and quantities non-negative and `discontinued` boolean |
+| `orders` | `order_id`, autoincrement | `sku` → `materials` | one row per accepted order: quantity, unit price, line total, timestamp; CHECK `quantity > 0` |
+| `materials_with_availability` | view over `materials` | | adds `qty_available` as `qty_on_hand - qty_reserved` |
+
+`qty_available` is deliberately not a column. It exists only in the view, which makes
+business rule 1 ("availability is derived, not stored") structurally impossible to violate:
+there is no stored value that can go stale, and every stock lookup in the service layer
+selects from the view rather than from `materials` directly.
+
+`orders` records the unit price and line total as they stood when the order was accepted,
+rather than deriving them from `materials` on read, so that a later price change cannot
+alter the value of an order already placed. Its foreign key means an order against an
+unknown SKU cannot be stored at all; because SQLite ignores `REFERENCES` clauses by
+default, `get_connection` sets `PRAGMA foreign_keys = ON` for every connection.
+
+Pydantic validates the feed before any insert, so the CHECK constraints are a second line
+of defence rather than the primary one. No secondary indexes are defined: at 77 materials
+every query is a small scan, and the primary keys cover the lookups that matter.
 
 ### Boundary between the LLM and application code
 
