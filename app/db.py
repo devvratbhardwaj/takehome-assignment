@@ -58,9 +58,12 @@ FROM materials;
 """
 
 
+DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "inventory.db"
+
+
 def get_connection(database_path: str | Path | None = None) -> sqlite3.Connection:
     if database_path is None:
-        database_path = os.environ.get("INVENTORY_DB", "inventory.db")
+        database_path = os.environ.get("INVENTORY_DB", str(DEFAULT_DB_PATH))
     connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
