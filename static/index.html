@@ -4,140 +4,189 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Inventory Assistant</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232b3442'/><path d='M9 11h14v12H9z' fill='none' stroke='%23f7f5f0' stroke-width='2.4'/><path d='M9 16h14' stroke='%23f7f5f0' stroke-width='2.4'/></svg>">
 <style>
   * { box-sizing: border-box; margin: 0; }
+  :root {
+    --bg: #f2efe8;
+    --line: #ddd6c6;
+    --text: #1a202c;
+    --muted: #6f6a60;
+    --accent: #2b3442;
+  }
   body {
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    background: #efece6;
-    color: #1a202c;
+    background: var(--bg);
+    color: var(--text);
     height: 100dvh;
-    display: flex;
-    justify-content: center;
   }
-  main {
-    width: 100%;
-    max-width: 680px;
-    display: flex;
-    flex-direction: column;
-    background: #fff;
-    box-shadow: 0 0 24px rgba(0, 0, 0, 0.06);
-  }
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 16px 20px;
-    background: #2b3442;
-  }
-  header h1 { font-size: 17px; font-weight: 600; color: #fff; }
-  header p { font-size: 13px; color: #a8b3c2; margin-top: 2px; }
+  main { height: 100%; display: flex; flex-direction: column; }
+  .column { width: 100%; max-width: 720px; margin: 0 auto; }
   #reset {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    z-index: 1;
     display: flex;
     align-items: center;
-    justify-content: center;
-    padding: 8px;
-    color: #cbd5e1;
-    background: none;
-    border: 1px solid #55627a;
-    flex-shrink: 0;
+    gap: 7px;
+    padding: 8px 15px 8px 12px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    background: #b04a34;
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
   }
+  #reset:hover { background: #973d28; }
   #messages {
     flex: 1;
     overflow-y: auto;
-    padding: 20px;
+    padding: 48px 20px 8px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
   }
-  .msg {
-    max-width: 82%;
-    padding: 10px 14px;
-    border-radius: 14px;
-    font-size: 14px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    overflow-wrap: break-word;
+  #thread { display: flex; flex-direction: column; gap: 24px; }
+  #empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding-bottom: 40px;
+    text-align: center;
+  }
+  #empty[hidden] { display: none; }
+  #empty h1 { font-size: 24px; font-weight: 600; }
+  #empty p { font-size: 14px; color: var(--muted); }
+  .msg { font-size: 15px; line-height: 1.65; overflow-wrap: break-word; }
+  .msg .text { white-space: pre-wrap; }
+  .who {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .who::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
   }
   .user {
     align-self: flex-end;
-    background: #2b3442;
-    color: #fff;
-    border-bottom-right-radius: 4px;
+    max-width: 78%;
+    padding: 10px 16px;
+    background: #e5ddcb;
+    border-radius: 18px;
   }
-  .assistant {
-    align-self: flex-start;
-    background: #f0ede7;
-    border-bottom-left-radius: 4px;
-  }
-  .notice {
+  .notice, .error {
     align-self: center;
-    background: #e7e3d8;
-    color: #57534e;
+    max-width: 90%;
+    padding: 7px 14px;
+    border-radius: 999px;
     font-size: 13px;
+    text-align: center;
   }
-  .error {
-    align-self: center;
-    background: #fdecec;
-    color: #b3261e;
-    font-size: 13px;
-  }
-  .pending { color: #64748b; animation: pulse 1.2s ease-in-out infinite; }
+  .notice { background: #ebe7dd; color: var(--muted); }
+  .error { background: #fdecec; color: #b3261e; }
+  .pending .text { color: var(--muted); animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: 0.45; } }
-  form {
+  form { padding: 10px 20px 22px; background: linear-gradient(to top, var(--bg) 70%, transparent); }
+  .composer {
     display: flex;
+    align-items: center;
     gap: 8px;
-    padding: 14px 20px;
-    border-top: 1px solid #e2e8f0;
+    padding: 6px 6px 6px 18px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 26px;
+    box-shadow: 0 1px 2px rgba(60, 50, 30, 0.05), 0 8px 20px rgba(60, 50, 30, 0.06);
+  }
+  .composer:focus-within {
+    border-color: #bdb4a0;
+    box-shadow: 0 1px 2px rgba(60, 50, 30, 0.06), 0 8px 22px rgba(60, 50, 30, 0.09);
   }
   input {
     flex: 1;
-    padding: 10px 14px;
+    padding: 9px 0;
     font: inherit;
-    font-size: 14px;
-    border: 1px solid #cbd5e1;
-    border-radius: 10px;
+    font-size: 15px;
+    color: inherit;
+    background: none;
+    border: none;
     outline: none;
   }
-  input:focus { border-color: #2b3442; }
-  button {
-    padding: 10px 18px;
-    font: inherit;
-    font-size: 14px;
-    font-weight: 600;
+  #send {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
     color: #fff;
-    background: #2b3442;
+    background: var(--accent);
     border: none;
-    border-radius: 10px;
+    border-radius: 50%;
     cursor: pointer;
   }
-  button:disabled, input:disabled { opacity: 0.55; cursor: default; }
+  button:disabled, input:disabled { opacity: 0.5; cursor: default; }
+  /* Before the first message the greeting and composer sit centred together. */
+  body.start main { justify-content: center; }
+  body.start #messages { flex: 0 0 auto; overflow: hidden; padding-bottom: 0; }
+  body.start #empty { padding-bottom: 26px; }
+  body.start form { background: none; padding-bottom: 10px; }
+  @media (max-width: 480px) {
+    form { padding-left: 14px; padding-right: 14px; }
+    #messages { padding: 44px 14px 8px; }
+  }
 </style>
 </head>
-<body>
+<body class="start">
 <main>
-  <header>
-    <div>
+  <button id="reset" type="button" title="Restore the original inventory data">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="23 4 23 10 17 10"/>
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+    </svg>
+    Reset data
+  </button>
+  <div id="messages">
+    <div id="empty" class="column">
       <h1>Inventory Assistant</h1>
       <p>Check stock, look up suppliers, place orders.</p>
     </div>
-    <button id="reset" type="button" title="Reset data" aria-label="Reset data">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="23 4 23 10 17 10"/>
-        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-      </svg>
-    </button>
-  </header>
-  <div id="messages"></div>
+    <div id="thread" class="column"></div>
+  </div>
   <form id="chat-form">
-    <input id="chat-input" placeholder="e.g. How many 15M rebar do we have?" autocomplete="off" autofocus>
-    <button id="send">Send</button>
+    <div class="column composer">
+      <input id="chat-input" placeholder="e.g. How many 15M rebar do we have?" autocomplete="off" autofocus>
+      <button id="send" type="submit" aria-label="Send">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="20" x2="12" y2="5"/>
+          <polyline points="5 12 12 5 19 12"/>
+        </svg>
+      </button>
+    </div>
   </form>
 </main>
 <script>
   const history = [];
   const messages = document.getElementById("messages");
+  const thread = document.getElementById("thread");
+  const empty = document.getElementById("empty");
   const form = document.getElementById("chat-form");
   const input = document.getElementById("chat-input");
   const send = document.getElementById("send");
@@ -146,8 +195,20 @@
   function addMessage(className, text) {
     const el = document.createElement("div");
     el.className = "msg " + className;
-    el.textContent = text;
-    messages.appendChild(el);
+    if (className.startsWith("assistant")) {
+      const who = document.createElement("div");
+      who.className = "who";
+      who.textContent = "Inventory Assistant";
+      el.appendChild(who);
+    }
+    const body = document.createElement("div");
+    body.className = "text";
+    body.textContent = text;
+    el.appendChild(body);
+    thread.appendChild(el);
+    empty.hidden = true;
+    document.body.classList.remove("start");
+    input.placeholder = "";
     messages.scrollTop = messages.scrollHeight;
     return el;
   }
@@ -160,7 +221,7 @@
       if (!response.ok) throw new Error("HTTP " + response.status);
       const counts = await response.json();
       history.length = 0;
-      messages.replaceChildren();
+      thread.replaceChildren();
       addMessage("notice", `Inventory reset — ${counts.materials} materials, ${counts.suppliers} suppliers reloaded`);
     } catch {
       addMessage("error", "Reset failed — please try again.");
