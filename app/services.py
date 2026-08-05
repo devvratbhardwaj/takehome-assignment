@@ -8,15 +8,15 @@ _UNIT_SYNONYMS = {"inch": "in", "inches": "in", "foot": "ft", "feet": "ft"}
 
 _EDGE_PUNCTUATION = "\"'.,()!?"
 
-_PARTIAL_MATCH_LIMIT = 5
+# Function words from order-style phrasings that no
+# catalogue description contains; left in, they void every AND-match.
+_STOP_WORDS = {"a", "an", "and", "any", "for", "of", "the"}
 
 
-def _with_presentation_fields(row: sqlite3.Row, match: str | None = None) -> dict:
+def _with_presentation_fields(row: sqlite3.Row) -> dict:
     material = dict(row)
     material["orderable_qty"] = max(0, material["qty_available"])
     material["over_allocated"] = material["qty_available"] < 0
-    if match is not None:
-        material["match"] = match
     return material
 
 
@@ -26,7 +26,7 @@ def _normalize_tokens(query: str) -> list[str]:
         token = raw.strip(_EDGE_PUNCTUATION)
         token = _UNIT_SYNONYMS.get(token, token)
         # Single characters ("x" in "3/4 x 2") match nearly every row.
-        if len(token) > 1:
+        if len(token) > 1 and token not in _STOP_WORDS:
             tokens.append(token)
     return tokens
 
@@ -57,34 +57,15 @@ def search_materials(
     if not tokens:
         return []
     clauses, params = _token_clauses(tokens)
-    category_filter = ""
     if category is not None:
-        category_filter = " AND lower(category) = lower(:category)"
+        clauses.append("lower(category) = lower(:category)")
         params["category"] = category
-    exact_sql = (
+    sql = (
         "SELECT * FROM materials_with_availability WHERE "
         + " AND ".join(clauses)
-        + category_filter
         + " ORDER BY sku"
     )
-    rows = connection.execute(exact_sql, params).fetchall()
-    if rows:
-        return [_with_presentation_fields(row, match="exact") for row in rows]
-    if len(clauses) < 2:
-        return []
-    # Near-misses for the agent to offer as alternatives, best-matching first.
-    score = " + ".join(f"({clause})" for clause in clauses)
-    partial_sql = (
-        "SELECT * FROM materials_with_availability WHERE ("
-        + " OR ".join(clauses)
-        + ")"
-        + category_filter
-        + f" ORDER BY {score} DESC, sku LIMIT {_PARTIAL_MATCH_LIMIT}"
-    )
-    return [
-        _with_presentation_fields(row, match="partial")
-        for row in connection.execute(partial_sql, params)
-    ]
+    return [_with_presentation_fields(row) for row in connection.execute(sql, params)]
 
 
 def get_stock(connection: sqlite3.Connection, sku: str) -> dict | None:

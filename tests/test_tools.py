@@ -69,14 +69,7 @@ def test_search_returns_json_payload(database_path):
     results = json.loads(search_materials.invoke({"query": "rebar 15m"}))
     assert [material["sku"] for material in results] == ["SKU-1"]
     assert results[0]["qty_available"] == 7
-    assert results[0]["match"] == "exact"
     assert "note" not in results[0]
-
-
-def test_search_relays_partial_matches(database_path):
-    results = json.loads(search_materials.invoke({"query": "rebar 25m"}))
-    assert [material["sku"] for material in results] == ["SKU-1"]
-    assert results[0]["match"] == "partial"
 
 
 def test_search_no_match_returns_empty_json_list(database_path):
@@ -136,7 +129,7 @@ def test_get_suppliers_filters_by_category(database_path):
 
 
 def test_tool_schemas_expose_expected_args():
-    assert set(search_materials.args) == {"query", "category"}
+    assert set(search_materials.args) == {"query"}
     assert set(get_stock.args) == {"sku"}
     assert set(quote_order.args) == {"sku", "quantity"}
     assert set(place_order.args) == {"sku", "quantity"}

@@ -121,44 +121,28 @@ def test_search_requires_every_token_to_match(connection):
     assert [result["sku"] for result in results] == ["RBR-15M-400W"]
 
 
-def test_search_falls_back_to_partial_matches(connection):
+def test_search_returns_empty_list_when_nothing_matches(connection):
     insert_material(connection, sku="RBR-15M-EPOXY", description="15M epoxy coated rebar, 6 m length")
     insert_material(connection, sku="RBR-20M-EPOXY", description="20M epoxy coated rebar, 6 m length")
-    results = search_materials(connection, "25m epoxy rebar")
-    assert [result["sku"] for result in results] == ["RBR-15M-EPOXY", "RBR-20M-EPOXY"]
-    assert all(result["match"] == "partial" for result in results)
-
-
-def test_search_returns_empty_list_when_no_token_matches(connection):
-    insert_material(connection, sku="RBR-15M-400W", description="15M deformed rebar, 6 m length")
-    assert search_materials(connection, "vinyl gutter downspout") == []
-
-
-def test_search_partial_ranks_by_matched_tokens_and_caps_results(connection):
-    for size in (10, 15, 20, 30, 35, 45):
-        insert_material(
-            connection,
-            sku=f"RBR-{size}M-400W",
-            description=f"{size}M deformed rebar, 6 m length",
-        )
-    insert_material(connection, sku="RBR-25M-EPOXY-X", description="25M epoxy coated rebar, 6 m length")
-    results = search_materials(connection, "25m epoxy deformed rebar")
-    assert len(results) == 5
-    ## Two matched tokens beat one; the epoxy row wins despite sorting last by SKU.
-    assert results[0]["sku"] == "RBR-25M-EPOXY-X"
+    assert search_materials(connection, "25m epoxy rebar") == []
 
 
 def test_search_matches_plural_query_against_singular_description(connection):
     insert_material(connection, sku="RBR-20M-400W", description="20M deformed rebar, 6 m length")
     results = search_materials(connection, "20M rebars")
     assert [result["sku"] for result in results] == ["RBR-20M-400W"]
-    assert results[0]["match"] == "exact"
 
 
 def test_search_normalizes_unit_words_and_punctuation(connection):
     insert_material(connection, sku="STL-PL38-A36", description="Steel plate 3/8 in, 4x8 ft sheet", category="structural_steel")
     for query in ('3/8 inch steel plate', '3/8" steel plate', '3/8 in steel plate'):
         assert [r["sku"] for r in search_materials(connection, query)] == ["STL-PL38-A36"], query
+
+
+def test_search_drops_stop_words_from_order_phrasings(connection):
+    insert_material(connection, sku="STL-PL38-A36", description="Steel plate 3/8 in, 4x8 ft sheet", category="structural_steel")
+    results = search_materials(connection, "3 sheets of 3/8 inch steel plate")
+    assert [result["sku"] for result in results] == ["STL-PL38-A36"]
 
 
 def test_search_drops_single_character_tokens(connection):

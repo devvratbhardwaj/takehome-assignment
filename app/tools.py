@@ -16,17 +16,15 @@ def _annotated(material: dict) -> dict:
 
 
 @tool
-def search_materials(query: str, category: str | None = None) -> str:
+def search_materials(query: str) -> str:
     """Search the materials catalogue by keywords matched against SKU,
-    description, spec grade and category. Each result carries a "match"
-    field: "exact" results satisfy every keyword; "partial" results are
-    near-misses to offer only as clearly-labelled alternatives, never as
-    the requested item. An empty result means nothing in the catalogue
-    is even close. Valid categories: structural_steel, rebar, fasteners,
-    concrete, timber, insulation, sheet_metal, welding, misc."""
+    description, spec grade and category. Every keyword must match, so
+    prefer few, specific words describing the material itself; an empty
+    result means no such material exists — never substitute a different
+    one."""
     connection = get_connection()
     try:
-        results = services.search_materials(connection, query, category)
+        results = services.search_materials(connection, query)
     finally:
         connection.close()
     return json.dumps([_annotated(material) for material in results])
