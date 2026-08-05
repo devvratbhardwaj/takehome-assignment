@@ -15,8 +15,7 @@ wheels/
 ## rebuildable local database
 *.db
 
-## Project Files
-raw_data/
+## Project description
 task_description/
 
 ## Output from brainstorming session
