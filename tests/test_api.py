@@ -176,3 +176,9 @@ def test_order_invalid_quantity_returns_422(client):
     response = client.post("/api/orders", json={"sku": "RBR-15M-400W", "quantity": 0})
     assert response.status_code == 422
     assert response.json()["detail"][0]["loc"] == ["body", "quantity"]
+
+
+def test_root_serves_chat_page(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")

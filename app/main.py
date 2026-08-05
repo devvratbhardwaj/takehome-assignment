@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.agent import get_agent
@@ -20,6 +22,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(router)
+
+INDEX_PAGE = Path(__file__).resolve().parent.parent / "static" / "index.html"
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(INDEX_PAGE)
 
 
 class ChatMessage(BaseModel):
