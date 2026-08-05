@@ -76,9 +76,10 @@ def place_order(sku: str, quantity: int) -> str:
 def get_suppliers(supplier_id: str | None = None, category: str | None = None) -> str:
     """List suppliers with lead times and payment terms, optionally filtered
     by supplier_id (format SUP-001) or by the material category they primarily
-    supply (same category values as search_materials; some categories have two
-    suppliers — report all rows). No filters returns all nine suppliers, which
-    is cheap — use that to resolve a supplier by name."""
+    supply. Valid categories: structural_steel, rebar, fasteners, concrete,
+    timber (lumber), insulation, sheet_metal, welding, misc. Some categories
+    have two suppliers — report all rows. No filters returns all nine
+    suppliers, which is cheap — use that to resolve a supplier by name."""
     connection = get_connection()
     try:
         return json.dumps(services.get_suppliers(connection, supplier_id, category))

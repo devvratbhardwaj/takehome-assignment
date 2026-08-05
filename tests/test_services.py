@@ -139,6 +139,19 @@ def test_search_normalizes_unit_words_and_punctuation(connection):
         assert [r["sku"] for r in search_materials(connection, query)] == ["STL-PL38-A36"], query
 
 
+def test_search_splits_hyphenated_compounds(connection):
+    insert_material(connection, sku="RBR-15M-EPOXY", description="15M epoxy coated rebar, 6 m length")
+    results = search_materials(connection, "epoxy-coated rebar")
+    assert [result["sku"] for result in results] == ["RBR-15M-EPOXY"]
+
+
+def test_search_maps_spelling_variants(connection):
+    insert_material(connection, sku="INS-VB-6MIL", description="Vapour barrier 6 mil poly, 3x60 m roll", category="insulation")
+    insert_material(connection, sku="SHT-FLASH-GALV", description="Galvanized flashing, 24 ga, 3 m length", category="sheet_metal")
+    assert [r["sku"] for r in search_materials(connection, "vapor barrier")] == ["INS-VB-6MIL"]
+    assert [r["sku"] for r in search_materials(connection, "galvanised flashing")] == ["SHT-FLASH-GALV"]
+
+
 def test_search_drops_stop_words_from_order_phrasings(connection):
     insert_material(connection, sku="STL-PL38-A36", description="Steel plate 3/8 in, 4x8 ft sheet", category="structural_steel")
     results = search_materials(connection, "3 sheets of 3/8 inch steel plate")

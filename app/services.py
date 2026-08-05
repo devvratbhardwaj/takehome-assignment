@@ -3,8 +3,16 @@ import sqlite3
 # spec_grade is nullable; without COALESCE the whole haystack would be NULL.
 _HAYSTACK = "lower(sku || ' ' || description || ' ' || coalesce(spec_grade, '') || ' ' || category)"
 
-# Only units the feed's descriptions actually use.
-_UNIT_SYNONYMS = {"inch": "in", "inches": "in", "foot": "ft", "feet": "ft"}
+# Only units and spelling variants the feed's descriptions actually use.
+_SYNONYMS = {
+    "inch": "in",
+    "inches": "in",
+    "foot": "ft",
+    "feet": "ft",
+    "vapor": "vapour",
+    "aluminium": "aluminum",
+    "galvanised": "galvanized",
+}
 
 _EDGE_PUNCTUATION = "\"'.,()!?"
 
@@ -22,9 +30,11 @@ def _with_presentation_fields(row: sqlite3.Row) -> dict:
 
 def _normalize_tokens(query: str) -> list[str]:
     tokens = []
-    for raw in query.lower().split():
+    # Hyphenated compounds ("epoxy-coated") appear unhyphenated in the feed;
+    # fraction fragments like "1/2" still substring-match "2-1/2".
+    for raw in query.lower().replace("-", " ").split():
         token = raw.strip(_EDGE_PUNCTUATION)
-        token = _UNIT_SYNONYMS.get(token, token)
+        token = _SYNONYMS.get(token, token)
         # Single characters ("x" in "3/4 x 2") match nearly every row.
         if len(token) > 1 and token not in _STOP_WORDS:
             tokens.append(token)
