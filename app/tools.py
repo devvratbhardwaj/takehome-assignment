@@ -45,9 +45,8 @@ def get_stock(sku: str) -> str:
 
 @tool
 def place_order(sku: str, quantity: int) -> str:
-    """Place an order for a material. Only call this after the user has
-    explicitly confirmed the SKU and quantity. Rejections carry a structured
-    reason (unknown_sku, discontinued, insufficient_stock, invalid_quantity);
+    """Place an order for a material. Rejections carry a structured reason
+    (unknown_sku, discontinued, insufficient_stock, invalid_quantity);
     relay it faithfully — never retry with altered numbers."""
     connection = get_connection()
     try:
