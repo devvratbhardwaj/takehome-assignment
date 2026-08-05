@@ -98,6 +98,8 @@ def test_stock_unknown_sku_returns_404(client):
 
 
 def test_order_confirmed_returns_201_and_reserves_stock(client):
+    ## Quantity 10 is below the feed's min_order_qty=25 on purpose: spec rule 6
+    ## says customer orders ignore it.
     response = client.post(
         "/api/orders", json={"sku": "RBR-15M-400W", "quantity": 10}
     )

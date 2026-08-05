@@ -3,7 +3,13 @@ import json
 import pytest
 
 from app.db import get_connection, init_schema
-from app.tools import get_stock, get_suppliers, place_order, search_materials
+from app.tools import (
+    get_stock,
+    get_suppliers,
+    place_order,
+    quote_order,
+    search_materials,
+)
 
 
 def insert_material(connection, **overrides):
@@ -63,7 +69,14 @@ def test_search_returns_json_payload(database_path):
     results = json.loads(search_materials.invoke({"query": "rebar 15m"}))
     assert [material["sku"] for material in results] == ["SKU-1"]
     assert results[0]["qty_available"] == 7
+    assert results[0]["match"] == "exact"
     assert "note" not in results[0]
+
+
+def test_search_relays_partial_matches(database_path):
+    results = json.loads(search_materials.invoke({"query": "rebar 25m"}))
+    assert [material["sku"] for material in results] == ["SKU-1"]
+    assert results[0]["match"] == "partial"
 
 
 def test_search_no_match_returns_empty_json_list(database_path):
@@ -83,6 +96,19 @@ def test_get_stock_unknown_sku_returns_error_object(database_path):
         "error": "unknown_sku",
         "sku": "SKU-NOPE",
     }
+
+
+def test_quote_order_prices_without_persisting(database_path):
+    quote = json.loads(quote_order.invoke({"sku": "SKU-1", "quantity": 5}))
+    assert quote["status"] == "quote"
+    assert quote["line_total"] == 5.0
+    assert quote["fulfillable"] is True
+    connection = get_connection(database_path)
+    reserved = connection.execute(
+        "SELECT qty_reserved FROM materials WHERE sku = 'SKU-1'"
+    ).fetchone()[0]
+    connection.close()
+    assert reserved == 3
 
 
 def test_place_order_confirms_and_persists(database_path):
@@ -112,7 +138,8 @@ def test_get_suppliers_filters_by_category(database_path):
 def test_tool_schemas_expose_expected_args():
     assert set(search_materials.args) == {"query", "category"}
     assert set(get_stock.args) == {"sku"}
+    assert set(quote_order.args) == {"sku", "quantity"}
     assert set(place_order.args) == {"sku", "quantity"}
     assert set(get_suppliers.args) == {"supplier_id", "category"}
-    for wrapped in (search_materials, get_stock, place_order, get_suppliers):
+    for wrapped in (search_materials, get_stock, quote_order, place_order, get_suppliers):
         assert wrapped.description

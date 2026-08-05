@@ -3,7 +3,13 @@ import threading
 import pytest
 
 from app.db import get_connection, init_schema
-from app.services import get_stock, get_suppliers, place_order, search_materials
+from app.services import (
+    get_stock,
+    get_suppliers,
+    place_order,
+    quote_order,
+    search_materials,
+)
 
 
 @pytest.fixture
@@ -83,6 +89,12 @@ def test_category_with_no_materials_returns_empty_list(connection):
     assert get_suppliers(connection, category="lumber") == []
 
 
+def test_supplier_category_filter_is_case_insensitive(connection):
+    insert_material(connection, sku="RBR-1", category="rebar", primary_supplier_id="SUP-002")
+    suppliers = get_suppliers(connection, category="Rebar")
+    assert [supplier["supplier_id"] for supplier in suppliers] == ["SUP-002"]
+
+
 def test_search_matches_description_case_insensitively(connection):
     insert_material(connection, sku="RBR-15M-400W", description="15M deformed rebar, 6 m length")
     insert_material(connection, sku="STL-W12X40-A992", description="W12x40 wide flange beam", category="structural_steel")
@@ -109,10 +121,64 @@ def test_search_requires_every_token_to_match(connection):
     assert [result["sku"] for result in results] == ["RBR-15M-400W"]
 
 
-def test_search_returns_empty_list_when_nothing_matches(connection):
+def test_search_falls_back_to_partial_matches(connection):
     insert_material(connection, sku="RBR-15M-EPOXY", description="15M epoxy coated rebar, 6 m length")
     insert_material(connection, sku="RBR-20M-EPOXY", description="20M epoxy coated rebar, 6 m length")
-    assert search_materials(connection, "25m epoxy rebar") == []
+    results = search_materials(connection, "25m epoxy rebar")
+    assert [result["sku"] for result in results] == ["RBR-15M-EPOXY", "RBR-20M-EPOXY"]
+    assert all(result["match"] == "partial" for result in results)
+
+
+def test_search_returns_empty_list_when_no_token_matches(connection):
+    insert_material(connection, sku="RBR-15M-400W", description="15M deformed rebar, 6 m length")
+    assert search_materials(connection, "vinyl gutter downspout") == []
+
+
+def test_search_partial_ranks_by_matched_tokens_and_caps_results(connection):
+    for size in (10, 15, 20, 30, 35, 45):
+        insert_material(
+            connection,
+            sku=f"RBR-{size}M-400W",
+            description=f"{size}M deformed rebar, 6 m length",
+        )
+    insert_material(connection, sku="RBR-25M-EPOXY-X", description="25M epoxy coated rebar, 6 m length")
+    results = search_materials(connection, "25m epoxy deformed rebar")
+    assert len(results) == 5
+    ## Two matched tokens beat one; the epoxy row wins despite sorting last by SKU.
+    assert results[0]["sku"] == "RBR-25M-EPOXY-X"
+
+
+def test_search_matches_plural_query_against_singular_description(connection):
+    insert_material(connection, sku="RBR-20M-400W", description="20M deformed rebar, 6 m length")
+    results = search_materials(connection, "20M rebars")
+    assert [result["sku"] for result in results] == ["RBR-20M-400W"]
+    assert results[0]["match"] == "exact"
+
+
+def test_search_normalizes_unit_words_and_punctuation(connection):
+    insert_material(connection, sku="STL-PL38-A36", description="Steel plate 3/8 in, 4x8 ft sheet", category="structural_steel")
+    for query in ('3/8 inch steel plate', '3/8" steel plate', '3/8 in steel plate'):
+        assert [r["sku"] for r in search_materials(connection, query)] == ["STL-PL38-A36"], query
+
+
+def test_search_drops_single_character_tokens(connection):
+    insert_material(connection, sku="FST-A325-34X2", description="A325 structural bolt 3/4 x 2 in, hex", category="fasteners")
+    insert_material(connection, sku="RBR-15M-400W", description="15M deformed rebar, 6 m length")
+    results = search_materials(connection, "3/4 x 2 bolt")
+    assert [result["sku"] for result in results] == ["FST-A325-34X2"]
+
+
+def test_search_finds_discontinued_materials(connection):
+    insert_material(connection, sku="STL-PL38-A36", description="Steel plate 3/8 in, 4x8 ft sheet", category="structural_steel", discontinued=1)
+    results = search_materials(connection, "3/8 steel plate")
+    assert [result["sku"] for result in results] == ["STL-PL38-A36"]
+    assert results[0]["discontinued"]
+
+
+def test_search_category_filter_is_case_insensitive(connection):
+    insert_material(connection, sku="RBR-15M-400W", description="15M deformed rebar")
+    results = search_materials(connection, "rebar", category="Rebar")
+    assert [result["sku"] for result in results] == ["RBR-15M-400W"]
 
 
 def test_search_category_filter_narrows_results(connection):
@@ -261,8 +327,54 @@ def test_place_order_rejects_over_allocated_sku(connection):
 
 
 def test_place_order_ignores_min_order_qty(connection):
+    ## Spec rule 6: min_order_qty governs restocking, never customer orders.
     insert_material(connection, sku="RBR-15M-400W", qty_on_hand=120, min_order_qty=25)
     assert place_order(connection, "RBR-15M-400W", 1)["status"] == "confirmed"
+
+
+def test_place_order_matches_sku_case_insensitively(connection):
+    insert_material(connection, sku="RBR-15M-400W", qty_on_hand=120, qty_reserved=0)
+    result = place_order(connection, "rbr-15m-400w", 10)
+    assert result["status"] == "confirmed"
+    assert result["sku"] == "RBR-15M-400W"
+    assert reserved_qty(connection, "RBR-15M-400W") == 10
+
+
+def test_get_stock_matches_sku_case_insensitively(connection):
+    insert_material(connection, sku="RBR-15M-400W")
+    assert get_stock(connection, "rbr-15m-400w")["sku"] == "RBR-15M-400W"
+
+
+def test_quote_order_prices_without_reserving(connection):
+    insert_material(connection, sku="RBR-15M-400W", unit_price=27.85, qty_on_hand=120, qty_reserved=0)
+    quote = quote_order(connection, "RBR-15M-400W", 100)
+    assert quote["status"] == "quote"
+    assert quote["line_total"] == 2785.0
+    assert quote["fulfillable"] is True
+    assert reserved_qty(connection, "RBR-15M-400W") == 0
+    assert order_count(connection) == 0
+
+
+def test_quote_order_still_prices_unfulfillable_quantities(connection):
+    insert_material(connection, sku="RBR-15M-400W", unit_price=27.85, qty_on_hand=120, qty_reserved=0)
+    quote = quote_order(connection, "RBR-15M-400W", 500)
+    assert quote["status"] == "quote"
+    assert quote["line_total"] == 13925.0
+    assert quote["fulfillable"] is False
+    assert quote["orderable_qty"] == 120
+
+
+def test_quote_order_ignores_min_order_qty(connection):
+    ## Spec rule 6 again: a 1-unit quote is fulfillable despite min_order_qty=25.
+    insert_material(connection, sku="RBR-15M-400W", qty_on_hand=120, min_order_qty=25)
+    assert quote_order(connection, "RBR-15M-400W", 1)["fulfillable"] is True
+
+
+def test_quote_order_rejects_unknown_and_discontinued(connection):
+    insert_material(connection, sku="STL-PL38-A36", discontinued=1)
+    assert quote_order(connection, "RBR-25M-EPOXY", 10)["reason"] == "unknown_sku"
+    assert quote_order(connection, "STL-PL38-A36", 1)["reason"] == "discontinued"
+    assert quote_order(connection, "STL-PL38-A36", 0)["reason"] == "invalid_quantity"
 
 
 def test_place_order_allows_exactly_available_quantity(connection):

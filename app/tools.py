@@ -18,8 +18,12 @@ def _annotated(material: dict) -> dict:
 @tool
 def search_materials(query: str, category: str | None = None) -> str:
     """Search the materials catalogue by keywords matched against SKU,
-    description, spec grade and category. An empty result means no such
-    material exists — never substitute a different one."""
+    description, spec grade and category. Each result carries a "match"
+    field: "exact" results satisfy every keyword; "partial" results are
+    near-misses to offer only as clearly-labelled alternatives, never as
+    the requested item. An empty result means nothing in the catalogue
+    is even close. Valid categories: structural_steel, rebar, fasteners,
+    concrete, timber, insulation, sheet_metal, welding, misc."""
     connection = get_connection()
     try:
         results = services.search_materials(connection, query, category)
@@ -44,9 +48,24 @@ def get_stock(sku: str) -> str:
 
 
 @tool
+def quote_order(sku: str, quantity: int) -> str:
+    """Price a quantity of a material without ordering or reserving anything.
+    Use this for every price/cost question. The quote carries the computed
+    line_total plus a fulfillable flag and orderable_qty showing whether the
+    quantity could actually be shipped. Rejections (unknown_sku, discontinued,
+    invalid_quantity) mirror place_order."""
+    connection = get_connection()
+    try:
+        return json.dumps(services.quote_order(connection, sku, quantity))
+    finally:
+        connection.close()
+
+
+@tool
 def place_order(sku: str, quantity: int) -> str:
-    """Place an order for a material. Rejections carry a structured reason
-    (unknown_sku, discontinued, insufficient_stock, invalid_quantity);
+    """Place an order for a material. Only call when the user clearly asks to
+    order; use quote_order for price questions. Rejections carry a structured
+    reason (unknown_sku, discontinued, insufficient_stock, invalid_quantity);
     relay it faithfully — never retry with altered numbers."""
     connection = get_connection()
     try:
@@ -58,8 +77,10 @@ def place_order(sku: str, quantity: int) -> str:
 @tool
 def get_suppliers(supplier_id: str | None = None, category: str | None = None) -> str:
     """List suppliers with lead times and payment terms, optionally filtered
-    by supplier_id or by the material category they primarily supply. No
-    filters returns all suppliers."""
+    by supplier_id (format SUP-001) or by the material category they primarily
+    supply (same category values as search_materials; some categories have two
+    suppliers — report all rows). No filters returns all nine suppliers, which
+    is cheap — use that to resolve a supplier by name."""
     connection = get_connection()
     try:
         return json.dumps(services.get_suppliers(connection, supplier_id, category))
