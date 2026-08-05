@@ -52,47 +52,53 @@ def place_order(connection: sqlite3.Connection, sku: str, quantity: int) -> dict
             "sku": sku,
             "requested_qty": quantity,
         }
-    stock = get_stock(connection, sku)
-    if stock is None:
-        return {"status": "rejected", "reason": "unknown_sku", "sku": sku}
-    if stock["discontinued"]:
-        return {"status": "rejected", "reason": "discontinued", "sku": sku}
-    ## min_order_qty is deliberately not checked: it applies to supplier restocking only.
-    if quantity > stock["orderable_qty"]:
+    ## Write lock up front: the availability check and the reserve bump must be
+    ## one atomic unit, or two concurrent orders can both pass the check and oversell.
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        stock = get_stock(connection, sku)
+        if stock is None:
+            return {"status": "rejected", "reason": "unknown_sku", "sku": sku}
+        if stock["discontinued"]:
+            return {"status": "rejected", "reason": "discontinued", "sku": sku}
+        if quantity > stock["orderable_qty"]:
+            return {
+                "status": "rejected",
+                "reason": "insufficient_stock",
+                "sku": sku,
+                "requested_qty": quantity,
+                "orderable_qty": stock["orderable_qty"],
+                "qty_available": stock["qty_available"],
+                "over_allocated": stock["over_allocated"],
+            }
+        line_total = round(stock["unit_price"] * quantity, 2)
+        cursor = connection.execute(
+            "INSERT INTO orders (sku, quantity, unit_price, line_total)"
+            " VALUES (:sku, :quantity, :unit_price, :line_total)",
+            {
+                "sku": sku,
+                "quantity": quantity,
+                "unit_price": stock["unit_price"],
+                "line_total": line_total,
+            },
+        )
+        connection.execute(
+            "UPDATE materials SET qty_reserved = qty_reserved + :quantity WHERE sku = :sku",
+            {"quantity": quantity, "sku": sku},
+        )
+        connection.commit()
         return {
-            "status": "rejected",
-            "reason": "insufficient_stock",
-            "sku": sku,
-            "requested_qty": quantity,
-            "orderable_qty": stock["orderable_qty"],
-            "qty_available": stock["qty_available"],
-            "over_allocated": stock["over_allocated"],
-        }
-    line_total = round(stock["unit_price"] * quantity, 2)
-    cursor = connection.execute(
-        "INSERT INTO orders (sku, quantity, unit_price, line_total)"
-        " VALUES (:sku, :quantity, :unit_price, :line_total)",
-        {
+            "status": "confirmed",
+            "order_id": cursor.lastrowid,
             "sku": sku,
             "quantity": quantity,
             "unit_price": stock["unit_price"],
             "line_total": line_total,
-        },
-    )
-    connection.execute(
-        "UPDATE materials SET qty_reserved = qty_reserved + :quantity WHERE sku = :sku",
-        {"quantity": quantity, "sku": sku},
-    )
-    connection.commit()
-    return {
-        "status": "confirmed",
-        "order_id": cursor.lastrowid,
-        "sku": sku,
-        "quantity": quantity,
-        "unit_price": stock["unit_price"],
-        "line_total": line_total,
-        "currency": stock["currency"],
-    }
+            "currency": stock["currency"],
+        }
+    finally:
+        if connection.in_transaction:
+            connection.rollback()
 
 
 def get_suppliers(

@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 
 from app.db import get_connection, init_schema
@@ -16,6 +18,7 @@ def connection():
             ("SUP-009", "Lakeshore Metal Products", "Oakville, ON", 21, "NET60"),
         ],
     )
+    connection.commit()
     yield connection
     connection.close()
 
@@ -43,6 +46,8 @@ def insert_material(connection, **overrides):
     connection.execute(
         f"INSERT INTO materials ({columns}) VALUES ({placeholders})", material
     )
+    ## Committed so place_order's BEGIN IMMEDIATE never nests inside seeding.
+    connection.commit()
 
 
 def test_all_suppliers_returned_without_filters(connection):
@@ -264,3 +269,38 @@ def test_place_order_allows_exactly_available_quantity(connection):
     insert_material(connection, sku="RBR-15M-400W", qty_on_hand=120, qty_reserved=0)
     assert place_order(connection, "RBR-15M-400W", 120)["status"] == "confirmed"
     assert get_stock(connection, "RBR-15M-400W")["qty_available"] == 0
+
+
+def test_concurrent_orders_cannot_oversell(tmp_path):
+    path = tmp_path / "race.db"
+    connection = get_connection(path)
+    init_schema(connection)
+    connection.execute(
+        "INSERT INTO suppliers VALUES"
+        " ('SUP-001', 'Northline Steel Supply', 'Hamilton, ON', 10, 'NET30')"
+    )
+    insert_material(connection, qty_on_hand=10, qty_reserved=0)
+    connection.close()
+
+    barrier = threading.Barrier(2)
+    results = []
+
+    def order():
+        thread_connection = get_connection(path)
+        try:
+            barrier.wait()
+            results.append(place_order(thread_connection, "SKU-1", 7))
+        finally:
+            thread_connection.close()
+
+    threads = [threading.Thread(target=order) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sorted(result["status"] for result in results) == ["confirmed", "rejected"]
+    connection = get_connection(path)
+    reserved = reserved_qty(connection, "SKU-1")
+    connection.close()
+    assert reserved == 7
